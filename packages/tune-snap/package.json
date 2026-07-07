@@ -1,0 +1,19 @@
+{
+  "name": "@audio/tune-snap",
+  "version": "0.0.0",
+  "description": "Real-time pitch correction — F0 detect → scale snap → formant-preserving shift (Auto-Tune class)",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "keywords": [
+    "audio",
+    "dsp",
+    "pitch-correction",
+    "snap"
+  ],
+  "license": "MIT",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@audio/tune-midi",
+  "version": "0.0.0",
+  "description": "Note-target pitch correction — align melody to reference MIDI/notes (Melodyne class)",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "keywords": [
+    "audio",
+    "dsp",
+    "pitch-correction",
+    "midi"
+  ],
+  "license": "MIT",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@audio/tune",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "description": "Pitch correction — umbrella for @audio/tune-* atoms (scale snap, MIDI-target)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "keywords": [
+    "audio",
+    "dsp",
+    "pitch-correction",
+    "autotune"
+  ],
+  "license": "MIT",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  }
+}
