@@ -14,7 +14,7 @@
   ],
   "dependencies": {
     "@audio/pitch-yin": "^1.0.0",
-    "@audio/note-scale": "^1.0.0",
+    "@audio/note": "^1.0.0",
     "@audio/shift-psola": "^1.0.0"
   },
   "keywords": [

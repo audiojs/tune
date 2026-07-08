@@ -3,7 +3,7 @@
 // v1 corrects per note segment (no intra-note glide); unvoiced audio passes through.
 
 import yin from '@audio/pitch-yin'
-import { snapHz } from '@audio/note-scale'
+import { snapHz } from '@audio/note'
 import psola from '@audio/shift-psola'
 
 const median = arr => {
