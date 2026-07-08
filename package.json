@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "sideEffects": false,
-  "description": "Pitch correction — umbrella for @audio/tune-* atoms (scale snap, MIDI-target)",
+  "description": "Pitch correction \u2014 umbrella for @audio/tune-* atoms (scale snap, MIDI-target)",
   "workspaces": [
     "packages/*"
   ],
@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "tst": "^9.4.0",
-    "@audio/pitch-yin": "file:../pitch/packages/pitch-yin"
+    "@audio/pitch-yin": "^1.0.0"
   },
   "publishConfig": {
     "access": "public"

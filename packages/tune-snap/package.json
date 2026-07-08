@@ -1,7 +1,7 @@
 {
   "name": "@audio/tune-snap",
   "version": "1.0.0",
-  "description": "Pitch correction — YIN track → note segments → scale snap → PSOLA retune (Auto-Tune class, per-note v1)",
+  "description": "Pitch correction \u2014 YIN track \u2192 note segments \u2192 scale snap \u2192 PSOLA retune (Auto-Tune class, per-note v1)",
   "type": "module",
   "sideEffects": false,
   "main": "snap.js",
@@ -13,9 +13,9 @@
     "snap.js"
   ],
   "dependencies": {
-    "@audio/pitch-yin": "file:../../../pitch/packages/pitch-yin",
-    "@audio/note-scale": "file:../../../note/packages/note-scale",
-    "@audio/shift-psola": "file:../../../shift/packages/shift-psola"
+    "@audio/pitch-yin": "^1.0.0",
+    "@audio/note-scale": "^1.0.0",
+    "@audio/shift-psola": "^1.0.0"
   },
   "keywords": [
     "audio",
