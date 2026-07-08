@@ -32,7 +32,8 @@
     "publish:all": "npm publish --workspaces && npm publish"
   },
   "dependencies": {
-    "@audio/tune-snap": "^0.1.0"
+    "@audio/tune-snap": "^1.0.0",
+    "@audio/tune-midi": "^1.0.0"
   },
   "devDependencies": {
     "tst": "^9.4.0",
