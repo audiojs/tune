@@ -5,8 +5,7 @@
 
 import yin from '@audio/pitch-yin'
 import psola from '@audio/shift-psola'
-
-const midiToHz = (m, a4 = 440) => a4 * 2 ** ((m - 69) / 12)
+import { midiToHz } from '@audio/note'
 
 /**
  * @param {Float32Array} data — mono PCM
