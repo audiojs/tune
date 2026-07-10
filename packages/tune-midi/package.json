@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-midi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Note-target pitch correction — align melody to reference MIDI/notes (Melodyne class)",
   "type": "module",
   "sideEffects": false,
