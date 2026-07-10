@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-snap",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Pitch correction — YIN track → note segments → scale snap → PSOLA retune (Auto-Tune class, per-note v1)",
   "type": "module",
   "sideEffects": false,
