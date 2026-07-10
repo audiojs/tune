@@ -1,4 +1,4 @@
-// atom manifest — wraps the scale-snap pitch corrector per @audio/atom CONTRACT.
+// atom manifest — wraps the scale-snap pitch corrector per @audio/compile CONTRACT.
 // The kernel is whole-signal by design: it tracks F0 across the take (YIN), segments
 // the melody into note runs, snaps each run's median pitch to the scale, and PSOLA-
 // retunes the segment crossfaded over the dry copy — segmentation needs the complete
