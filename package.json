@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "sideEffects": false,
   "description": "Pitch correction — umbrella for @audio/tune-* atoms (scale snap, MIDI-target)",
@@ -45,5 +45,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/audiojs/tune.git"
-  }
+  },
+  "funding": "https://github.com/sponsors/audiojs"
 }

@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-snap",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Pitch correction — YIN track → note segments → scale snap → PSOLA retune (Auto-Tune class, per-note v1)",
   "type": "module",
   "sideEffects": false,
@@ -16,7 +16,8 @@
   "files": [
     "snap.js",
     "audio.js",
-    "audio.d.ts"
+    "audio.d.ts",
+    "snap.d.ts"
   ],
   "dependencies": {
     "@audio/pitch-yin": "^1.0.0",
@@ -38,10 +39,12 @@
   "publishConfig": {
     "access": "public"
   },
+  "types": "./snap.d.ts",
   "audio": "./audio.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/audiojs/tune.git",
     "directory": "packages/tune-snap"
-  }
+  },
+  "funding": "https://github.com/sponsors/audiojs"
 }

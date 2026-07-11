@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-midi",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Note-target pitch correction — align melody to reference MIDI/notes (Melodyne class)",
   "type": "module",
   "sideEffects": false,
@@ -21,7 +21,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "midi.js"
+    "midi.js",
+    "midi.d.ts"
   ],
   "dependencies": {
     "@audio/pitch-yin": "^1.0.0",
@@ -35,5 +36,7 @@
     "type": "git",
     "url": "git+https://github.com/audiojs/tune.git",
     "directory": "packages/tune-midi"
-  }
+  },
+  "types": "./midi.d.ts",
+  "funding": "https://github.com/sponsors/audiojs"
 }
