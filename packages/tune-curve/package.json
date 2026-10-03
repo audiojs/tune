@@ -1,0 +1,42 @@
+{
+  "name": "@audio/tune-curve",
+  "version": "0.1.0",
+  "description": "Retune a voice along a pitch curve, its own glottal cycles re-spaced (TD-PSOLA): formants and consonants kept, streaming (Melodyne class)",
+  "type": "module",
+  "sideEffects": false,
+  "keywords": [
+    "audio",
+    "dsp",
+    "pitch-correction",
+    "psola",
+    "voice",
+    "melodyne"
+  ],
+  "license": "MIT",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "curve.js",
+  "exports": {
+    ".": "./curve.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "curve.js",
+    "curve.d.ts"
+  ],
+  "dependencies": {
+    "@audio/pitch-yin": "^1.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/audiojs/tune.git",
+    "directory": "packages/tune-curve"
+  },
+  "types": "./curve.d.ts",
+  "funding": "https://github.com/sponsors/audiojs"
+}
