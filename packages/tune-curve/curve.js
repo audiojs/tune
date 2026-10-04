@@ -10,7 +10,9 @@
 // shift up or down; at .35, 63 to 66%. The looser dip sometimes takes a harmonic's period for the voice's: a sung take
 // (audio-lena) went from 75% to 68%. Synthetic voices shift as before. Then a mark per cycle, the first at the loudest sample of a voiced run's first period and each next a period on, moved to where a
 // period of waveform matches the one before best (normalized correlation, refined between samples), as the prosody
-// editor's cycles.js steps them.
+// editor's cycles.js steps them. A pitch track given as `f0` (a better tracker's, such as pYIN's Viterbi path) takes
+// the place of that YIN: the looser dip's harmonics then never set the cycles, which, a third or a quarter of a period
+// apart, re-spaced the waveform's ripples instead of its pulses.
 // Against a synthetic voice re-synthesized at the target pitch (same Rosenberg pulse, same formants), the re-spaced
 // cycles kept its harmonics within 2.6 dB (median over ±12 semitones), a phase vocoder within 10.6 dB, its formants
 // moving with the pitch; on a sung recording they kept the long-term spectrum within 1.6 to 2.7 dB, the vocoder 7.5 to
@@ -19,7 +21,8 @@
 // tuneCurve(data, { semitones | ratio, fs }) → retuned copy; tuneCurve(opts) → write(chunk) → the retuned stream
 // `write.latency` samples behind its input, write() → the rest. `semitones` (or `ratio`): a number, a function of
 // seconds from the stream's start, or a curve { t, v } (seconds → semitones, straight between points, flat past its
-// ends). Where the ratio is 1 and the cycles are laid where they were, the output is the input to float precision.
+// ends). `f0`: the voice's pitch, a curve { t, v } (seconds → Hz, 0 where unvoiced) or a function of seconds, to find
+// the cycles on. Where the ratio is 1 and the cycles are laid where they were, the output is the input to float precision.
 
 import yin from '@audio/pitch-yin'
 
@@ -34,6 +37,20 @@ const curveAt = ({ t, v }) => {
     while (t[i] < x) i++
     while (i > 1 && t[i - 1] >= x) i--
     return v[i - 1] + (v[i] - v[i - 1]) * ((x - t[i - 1]) / (t[i] - t[i - 1]))
+  }
+}
+
+// a pitch track { t, v } (seconds → Hz, 0 unvoiced) at x seconds, asked in order: between two voiced points straight
+// in log frequency, else the nearer point's (a voiced edge stays where the track puts it)
+const pitchAt = ({ t, v }) => {
+  let i = 1, n = t.length
+  return x => {
+    if (x <= t[0]) return v[0]
+    if (x >= t[n - 1]) return v[n - 1]
+    while (t[i] < x) i++
+    while (i > 1 && t[i - 1] >= x) i--
+    let a = v[i - 1], b = v[i], u = (x - t[i - 1]) / (t[i] - t[i - 1])
+    return a > 0 && b > 0 ? a * (b / a) ** u : u < .5 ? a : b
   }
 }
 
@@ -70,6 +87,8 @@ export const latencyOf = ({ fs = 44100, sampleRate, minFreq = 60, rmin = .25 } =
 /** The streaming retuner over `nch` channels: write(channels) → the timeline samples now final; end() → the rest. */
 export function retuner(nch, o = {}) {
   let fs = o.sampleRate || o.fs || 44100, ratio = ratioOf(o)
+  // the voice's pitch, Hz at seconds, when given: the cycles are found on it rather than on YIN's
+  let given = typeof o.f0 === 'function' ? o.f0 : isCurve(o.f0) ? pitchAt(o.f0) : null
   let minFreq = o.minFreq || 60, maxFreq = o.maxFreq || 1000, Pmax = Math.ceil(fs / minFreq), Pmin = Math.max(2, Math.floor(fs / maxFreq))
   let dec = Math.max(1, Math.floor(fs / 11025)), fsd = fs / dec, Wd = 2 ** Math.ceil(Math.log2(2 * fsd / minFreq))
   let hop = Math.max(dec, Math.round(.005 * fs / dec) * dec), V = hop, latency = latencyOf({ fs, minFreq, rmin: o.rmin })
@@ -116,7 +135,8 @@ export function retuner(nch, o = {}) {
       let k = tbase + raw.length, c = k * hop
       if (c + Wd / 2 * dec > n) return
       let lo = c / dec - Wd / 2 - base / dec, f = 0
-      if (lo >= 0) {
+      if (given) { let hz = +given(c / fs); if (hz >= minFreq && hz <= maxFreq) f = fs / hz }
+      else if (lo >= 0) {
         let fr = d.subarray(lo, lo + Wd), e = 0
         for (let i = 0; i < Wd; i++) e += fr[i] * fr[i]
         if (e / Wd > 1e-7) { let r = yin(fr, { fs: fsd, minFreq, maxFreq: Math.min(maxFreq, fsd / 4), threshold: VOICED }); if (r) f = fs / r.freq }

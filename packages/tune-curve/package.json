@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-curve",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Retune a voice along a pitch curve, its own glottal cycles re-spaced (TD-PSOLA): formants and consonants kept, streaming (Melodyne class)",
   "type": "module",
   "sideEffects": false,

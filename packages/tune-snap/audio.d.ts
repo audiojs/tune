@@ -20,6 +20,8 @@ export interface TuneOptions {
   "tolerance"?: Auto
   /** 0..1 (default 1) */
   "strength"?: Auto
+  /** 0..400 ms (default 80) */
+  "speed"?: Auto
   at?: number | string
   duration?: number | string
 }
@@ -40,5 +42,7 @@ export declare const tune: {
     "tolerance": { type: "number", default: 8 }
     /** 0..1 (default 1) */
     "strength": { type: "number", default: 1 }
+    /** 0..400 ms (default 80) */
+    "speed": { type: "number", default: 80 }
   }
 }

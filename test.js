@@ -45,6 +45,46 @@ test('snap — silence passes through', () => {
 	ok(out.every(v => v === 0))
 })
 
+// The pitch of `d` in cents re A4 every 5 ms over [a, b) s, YIN on 2048 samples (NaN where it finds none)
+const cents = (d, a, b) => {
+	let c = []
+	for (let t = a; t < b; t += .005) { let i = Math.round(t * fs) - 1024, r = i >= 0 && yin(d.subarray(i, i + 2048), { fs, minFreq: 60, maxFreq: 1000 }); c.push(r ? 1200 * Math.log2(r.freq / 440) : NaN) }
+	return c
+}
+const median = a => { let s = a.filter(v => v === v).sort((p, q) => p - q); return s[s.length >> 1] }
+const spread = a => { let v = a.filter(x => x === x), m = v.reduce((s, x) => s + x, 0) / v.length; return Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / v.length) }
+
+// A3 sung 30 cents sharp with a ±40-cent vibrato at 5.5 Hz: the centre lands on A3; at the default speed the vibrato
+// stays, at speed 0 every moment is set on the note
+test('snap — a sung note lands on its note, its vibrato kept; speed 0 flattens it', () => {
+	let f0 = t => 220 * 2 ** ((.3 + .4 * Math.sin(2 * Math.PI * 5.5 * t)) / 12), d = voice(f0, Math.round(1.6 * fs))
+	let dry = cents(d, .3, 1.3), wet = cents(snap(d, { fs }), .3, 1.3), hard = cents(snap(d, { fs, speed: 0 }), .3, 1.3)
+	almost(median(wet), -1200, 5, `centre ${(median(dry) + 1200).toFixed(0)} → ${(median(wet) + 1200).toFixed(1)} cents re A3`)
+	ok(spread(wet) / spread(dry) > .85, `vibrato kept: ${spread(dry).toFixed(1)} → ${spread(wet).toFixed(1)} cents rms`)
+	ok(spread(hard) < 6 && Math.abs(median(hard) + 1200) < 3, `speed 0: ${spread(hard).toFixed(1)} cents rms about ${(median(hard) + 1200).toFixed(1)}`)
+})
+
+// A3 30 cents sharp, then an 80-ms glide up to C#4 40 cents flat: each lands, and the pitch and the level move from one
+// to the next as they were sung. Cut out, shifted apart and crossfaded back over the dry voice (tune-snap 1), the
+// glide fell 3.2 dB where the two pitches met and YIN found no period in it
+test('snap — a legato step: both notes land, the glide between them unbroken', () => {
+	let p = t => t < .7 ? .3 : t > .78 ? 3.6 : .3 + 3.3 * (.5 - .5 * Math.cos(Math.PI * (t - .7) / .08))
+	let d = voice(t => 220 * 2 ** (p(t) / 12), Math.round(1.5 * fs)), out = snap(d, { fs })
+	let a = cents(out, .25, .6), b = cents(out, .9, 1.3), c = cents(out, .55, .95), dc = cents(d, .55, .95)
+	almost(median(a), -1200, 5, `first note: ${(median(a) + 1200).toFixed(1)} cents re A3`)
+	almost(median(b), -800, 5, `second note: ${(median(b) + 800).toFixed(1)} cents re C#4`)
+	let jump = x => Math.max(...x.slice(1).map((v, i) => Math.abs(v - x[i])).filter(v => v === v))
+	ok(jump(c) < jump(dc) + 15, `the largest step in 5 ms: ${jump(dc).toFixed(0)} cents sung, ${jump(c).toFixed(0)} tuned`)
+	let level = (x, i) => { let s = 0; for (let k = i; k < i + 441; k++) s += x[k] * x[k]; return 10 * Math.log10(s) }, dip = 0
+	for (let i = Math.round(.5 * fs); i < fs; i += 110) dip = Math.min(dip, level(out, i) - level(d, i))
+	ok(dip > -2, `the level within ${(-dip).toFixed(1)} dB of the voice's through the step (10 ms)`)
+})
+
+test('snap — channels on one pitch and one set of cycles', () => {
+	let d = voice(t => 150 * 2 ** (.35 * Math.sin(2 * Math.PI * 1.3 * t) / 12), fs), [l, r] = snap([d, d.map(x => .5 * x)], { fs, speed: 0 })
+	ok(l.some((x, i) => x !== d[i]) && l.every((x, i) => Math.abs(.5 * x - r[i]) < 1e-6), 'retuned, the level of each kept')
+})
+
 import tuneMidi from '@audio/tune-midi'
 
 test('tune-midi — off-pitch note pulled to the guide note', () => {
@@ -168,4 +208,15 @@ test('tune-curve: a voice gliding as speech does shifts whole, every frame by th
 test('tune-curve: channels retune on one set of cycles', () => {
 	let d = voice(150, fs), [l, r] = tuneCurve([d, d.map(x => .5 * x)], { semitones: 3, fs })
 	ok(l.every((x, i) => Math.abs(.5 * x - r[i]) < 1e-6), 'the same cycles in both, the level of each kept')
+})
+
+// A pitch track given finds the cycles on it: where it says unvoiced, nothing moves; where it says the voice's pitch,
+// the shift lands as on the retuner's own
+test('tune-curve: cycles found on a pitch track given (f0)', () => {
+	let n = Math.round(1.2 * fs), d = voice(140, n)
+	let none = tuneCurve(d, { semitones: 3, fs, f0: { t: [0, 1.2], v: [0, 0] } })
+	ok(none.every((x, i) => x === d[i]), 'a track all unvoiced: the input as it is')
+	let out = tuneCurve(d, { semitones: 3, fs, f0: t => 140 }), f = 140 * 2 ** (3 / 12)
+	let r = yin(out.subarray(fs >> 1, (fs >> 1) + 4096), { fs, minFreq: 60, maxFreq: 1000 }), c = 1200 * Math.log2(r.freq / f)
+	ok(Math.abs(c) < 2, `on the voice's pitch, +3: ${r.freq.toFixed(2)} Hz, ${c.toFixed(2)} cents`)
 })

@@ -12,6 +12,7 @@ import tuneCurve from '@audio/tune-curve'
 tuneCurve(voice, { semitones: 3, fs: 44100 })                               // a constant shift
 tuneCurve(voice, { semitones: { t: [0, 1, 1.5], v: [0, 2, 0] }, fs })      // a drawn curve: seconds → semitones
 tuneCurve(voice, { semitones: t => 0.5 * Math.sin(2 * Math.PI * 5 * t), fs }) // vibrato
+tuneCurve(voice, { semitones: 2, f0: { t: times, v: hz }, fs })            // cycles found on a pitch track given
 
 let write = tuneCurve({ semitones: curve, fs })   // streaming: write(chunk) → output `write.latency` samples behind
 let out = write(chunk), tail = write()
@@ -29,6 +30,9 @@ The cycles are found as the audio streams: f0 by YIN (de Cheveigné & Kawahara, 
 | `minFreq` | `60` | Hz, the lowest pitch a cycle is looked for at |
 | `maxFreq` | `1000` | Hz, the highest |
 | `rmin` | `0.25` | the least ratio the curve takes: a stream's latency covers it |
+| `f0` | | the voice's pitch to find its cycles on instead of YIN: a curve `{ t, v }` (seconds → Hz, 0 where unvoiced, straight in log frequency between voiced points) or a function of seconds |
+
+A whole take is better tracked than a stream: given pYIN's Viterbi path (Mauch & Dixon, ICASSP 2014; [`@audio/pitch-pyin`](https://github.com/audiojs/pitch/tree/main/packages/pitch-pyin)) as `f0`, no harmonic's period sets the cycles, which, a third or a quarter of a period apart, re-spaced the waveform's ripples instead of its pulses. Over eight solo singers of Vocadito (158 s), the 30-ms frames whose periodicity (1 less YIN's least normalized difference) fell by more than 0.2 from over 0.8 went from 103 to 36 at +2 semitones, 183 to 48 at −2 and 278 to 76 at +5.
 
 Channels are retuned on one set of cycles, found on their mean, so a stereo voice keeps its image. Streaming output equals the batch output sample for sample, however the input is chunked.
 
