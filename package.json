@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "sideEffects": false,
   "description": "Pitch correction: umbrella for @audio/tune-* atoms (scale snap, MIDI-target, drawn curve)",
@@ -38,7 +38,7 @@
   "dependencies": {
     "@audio/tune-snap": "^2.0.0",
     "@audio/tune-midi": "^1.0.0",
-    "@audio/tune-curve": "^0.2.0"
+    "@audio/tune-curve": "^0.3.0"
   },
   "devDependencies": {
     "tst": "^9.4.0",

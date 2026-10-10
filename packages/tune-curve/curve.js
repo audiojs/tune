@@ -1,7 +1,9 @@
 // Retune a voice along a pitch curve: its own glottal cycles, re-spaced (TD-PSOLA, Moulines & Charpentier, Speech
-// Communication 9, 1990). A cycle at a time is cut around its mark by a two-lobed window and laid at the spacing the
-// curve asks for. The pulse shape, the vocal tract's ringing on it, the breath and the jitter stay the voice's own, so
-// the formants stay where they were. Unvoiced audio (consonants, breath, silence) passes as it is.
+// Communication 9, 1990). A cycle at a time is cut around its mark by a two-lobed window, each lobe the source's period
+// that side and no longer than the spacing (as Praat's), and laid at the spacing the curve asks for. The pulse shape,
+// the vocal tract's ringing on it, the breath and the jitter stay the voice's own, so the formants stay where they
+// were. Unvoiced audio (consonants, breath, silence) passes as it is. Where the ratio returns to 1, the cycles have
+// drifted back onto their marks, and the input comes back as it was.
 //
 // The cycles are found as the audio streams: f0 by YIN (de Cheveigné & Kawahara, JASA 111, 2002) on the channels' mean
 // at about 11 kHz (samples averaged in fours), every 5 ms, a frame voiced where it and a neighbour pass: where YIN's
@@ -70,18 +72,24 @@ export function ratioOf(o) {
 const ZC = 8, RES = 512
 // a frame is voiced where YIN's normalized difference dips under this (above)
 const VOICED = .35
+// the cycles find their marks again over this long (s) before the ratio returns to 1: about the time a voice takes to
+// move its pitch a few semitones at its fastest (Xu & Sun, JASA 111, 2002, Table V: 89.6 ms and 8.7 more a semitone
+// rising, 100.4 and 5.8 falling)
+const STEER = .1
+// a voiced run is looked for this far (s) back from where YIN found it, whose frame is voiced only once mostly voiced
+const ONSET = .04
 const I0 = x => { let s = 1, t = 1; for (let k = 1; k < 25; k++) { t *= (x / 2 / k) ** 2; s += t } return s }
 const KERNEL = Float64Array.from({ length: ZC * RES + 2 }, (_, i) => { let x = i / RES; return x >= ZC ? 0 : (x ? Math.sin(Math.PI * x) / (Math.PI * x) : 1) * I0(8 * Math.sqrt(1 - (x / ZC) ** 2)) / I0(8) })
 
 const ncc = (x, a, b, n) => { let xy = 0, xx = 0, yy = 0; for (let i = 0; i < n; i++) { let p = x[a + i], q = x[b + i]; xy += p * q; xx += p * p; yy += q * q } return xy / Math.sqrt(xx * yy || 1) }
 
 /** Samples the retuner runs behind its input, for voices down to minFreq and ratios down to rmin: half a YIN window
- *  and two frames ahead for the track, a period and a half for the next mark, a cycle's window past its mark, and the
- *  widest lobe a cycle still to come reaches back by. */
+ *  and two frames ahead for the track, the ONSET a voiced run's start is looked for back by, a period and a half for
+ *  the next mark, a cycle's window past its mark, and the widest lobe a cycle still to come reaches back by. */
 export const latencyOf = ({ fs = 44100, sampleRate, minFreq = 60, rmin = .25 } = {}) => {
   fs = sampleRate || fs
   let dec = Math.max(1, Math.floor(fs / 11025)), Wd = 2 ** Math.ceil(Math.log2(2 * fs / dec / minFreq)), hop = Math.max(dec, Math.round(.005 * fs / dec) * dec)
-  return Wd / 2 * dec + 2 * hop + Math.ceil(fs / minFreq * (3 + 1 / Math.min(1, rmin))) + 2 * ZC + 2
+  return Wd / 2 * dec + 2 * hop + Math.round(ONSET * fs) + Math.ceil(fs / minFreq * (3 + 1 / Math.min(1, rmin))) + 2 * ZC + 2
 }
 
 /** The streaming retuner over `nch` channels: write(channels) → the timeline samples now final; end() → the rest. */
@@ -91,7 +99,7 @@ export function retuner(nch, o = {}) {
   let given = typeof o.f0 === 'function' ? o.f0 : isCurve(o.f0) ? pitchAt(o.f0) : null
   let minFreq = o.minFreq || 60, maxFreq = o.maxFreq || 1000, Pmax = Math.ceil(fs / minFreq), Pmin = Math.max(2, Math.floor(fs / maxFreq))
   let dec = Math.max(1, Math.floor(fs / 11025)), fsd = fs / dec, Wd = 2 ** Math.ceil(Math.log2(2 * fsd / minFreq))
-  let hop = Math.max(dec, Math.round(.005 * fs / dec) * dec), V = hop, latency = latencyOf({ fs, minFreq, rmin: o.rmin })
+  let hop = Math.max(dec, Math.round(.005 * fs / dec) * dec), V = hop, latency = latencyOf({ fs, minFreq, rmin: o.rmin }), back = Math.round(ONSET * fs)
   // the input, its channels' mean, and that mean averaged in fours, all from timeline sample `base`
   let x = Array.from({ length: nch }, () => new Float32Array(1 << 15)), m = new Float32Array(1 << 15), d = new Float32Array((1 << 15) / dec + 2)
   let base = 0, n = 0
@@ -99,8 +107,9 @@ export function retuner(nch, o = {}) {
   let raw = [], track = [], tbase = 0
   // marks, from `mbase`; where the next is looked for; whether a voiced run is on
   let marks = [], mbase = 0, cursor = 0, run = false
-  // the next cycle's place `s` and the mark `j` it is laid from; sums of the laid cycles and their windows from `obase`
-  let s = 0, j = 0, started = false, out = Array.from({ length: nch }, () => new Float64Array(1 << 15)), wsum = new Float64Array(1 << 15), obase = 0, emitted = 0
+  // the next cycle's place `s` and the mark `j` it is laid from; the cycle placed before it, laid once `s` is known;
+  // the sum of the laid cycles from `obase`
+  let s = 0, j = 0, started = false, pend = null, out = Array.from({ length: nch }, () => new Float64Array(1 << 15)), obase = 0, emitted = 0
   let late = 0  // cycle samples that would have landed on emitted output: a latency too short (stays 0)
 
   const grow = need => {
@@ -111,10 +120,9 @@ export function retuner(nch, o = {}) {
     let db = new Float32Array(Math.ceil(len / dec) + 2); db.set(d.subarray(0, Math.ceil(have / dec))); d = db
   }
   const growOut = need => {
-    if (need <= wsum.length) return
-    let len = Math.max(need, 2 * wsum.length)
+    if (need <= out[0].length) return
+    let len = Math.max(need, 2 * out[0].length)
     out = out.map(a => { let b = new Float64Array(len); b.set(a); return b })
-    let wb = new Float64Array(len); wb.set(wsum); wsum = wb
   }
   const at = (c, p) => {
     let fl = Math.floor(p)
@@ -150,6 +158,16 @@ export function retuner(nch, o = {}) {
     }
   }
 
+  // where a period of the waveform (2h long) best matches the one around b0, from lo to hi: its lag from b0, refined
+  // between samples, and how well (normalized correlation)
+  const match = (b0, lo, hi, h) => {
+    let best = lo, score = -Infinity, sc = new Map()
+    for (let c = lo; c <= hi; c++) { let v = ncc(m, b0 - h - base, c - h - base, 2 * h); sc.set(c, v); if (v > score) { score = v; best = c } }
+    let lag = best - b0
+    if (best > lo && best < hi) { let y0 = sc.get(best - 1), y2 = sc.get(best + 1), dd = y0 - 2 * score + y2; if (dd < 0) lag += (y0 - y2) / (2 * dd) }
+    return [lag, score]
+  }
+
   function place() {
     for (;;) {
       let edge = known()
@@ -170,24 +188,74 @@ export function retuner(nch, o = {}) {
         if (b + 2 > n) return
         pos = a
         for (let i = a, bv = -1; i < b; i++) { let v = Math.abs(m[i - base]); if (v > bv) { bv = v; pos = i } }
+        // and goes back a cycle at a time while each matches the one after as a cycle past a voiced interval's edge must
+        // in Praat's (correlation over .7, Pitch_to_PointProcess.cpp), over the marks the cycles have not reached: YIN
+        // finds a voice once its frame is mostly voiced, and a run's first 20 ms or so stayed at its pitch while the rest
+        // moved (on eight recordings, 6.5% of the frames Praat finds voiced; now 0.9%)
+        let used = j - mbase + 1, free = used < marks.length ? marks[used].pos + 1 : 0, add = []
+        for (let q = pos; ;) {
+          let next = q - P, h = Math.round(P / 2), lo = Math.round(next - .3 * P), hi = Math.round(next + .3 * P)
+          if (lo - h < base || lo < free) break
+          let [lag, score] = match(Math.round(q), lo, hi, h)
+          if (score <= .7) break
+          add.unshift(q += lag)
+        }
+        if (add.length) {
+          let i = Math.max(used + 1, 0)
+          while (i < marks.length && marks[i].pos < add[0] - P / 2) i++
+          marks.splice(i)
+          for (let q of add) marks.push({ pos: q, voiced: true })
+        }
       } else {
         let next = prev.pos + P
         if (next >= edge) return
         if (!period(next)) { run = false; cursor = next; continue }
-        let h = Math.round(P / 2), lo = Math.round(next - .3 * P), hi = Math.round(next + .3 * P), b0 = Math.round(prev.pos)
+        let h = Math.round(P / 2), lo = Math.round(next - .3 * P), hi = Math.round(next + .3 * P)
         if (hi + h + 2 > n) return
-        let best = Math.round(next), score = -Infinity, sc = new Map()
-        for (let c = lo; c <= hi; c++) { let v = ncc(m, b0 - h - base, c - h - base, 2 * h); sc.set(c, v); if (v > score) { score = v; best = c } }
-        pos = next
+        let [lag, score] = match(Math.round(prev.pos), lo, hi, h)
         // an aperiodic cycle keeps the predicted spacing rather than a random peak
-        if (score >= .3) {
-          let lag = best - b0
-          if (best > lo && best < hi) { let y0 = sc.get(best - 1), y2 = sc.get(best + 1), dd = y0 - 2 * score + y2; if (dd < 0) lag += (y0 - y2) / (2 * dd) }
-          pos = prev.pos + lag
-        }
+        pos = score >= .3 ? prev.pos + lag : next
         if (pos - prev.pos < Pmin) pos = prev.pos + P
       }
       marks.push({ pos, voiced: true }); run = true; cursor = pos
+    }
+  }
+
+  // Where the ratio returns to 1, the cycles return onto their marks. Re-spaced, they run fs ∫(ratio − 1) samples
+  // ahead of the input, whatever its period, and a part of a period is left when the ratio comes back to 1: whatever
+  // follows (the input itself, a crossfade back into it) met them that far off, up to half a period, where the two
+  // cancel (eight recordings, a curve back to 0 mid-vowel: over the next 10 ms the difference from the input stood
+  // 2.2 dB above its level, the median of 32; now none in any).
+  // So over the STEER before the ratio is back at 1 (a millisecond on end: not a curve crossing 0), each cycle's
+  // spacing takes its share of what that part will be there, the nearer way, the marks ahead taken a period apart
+  // (this cycle's own spacing, measured from the period it is laid by, `P`, to the next mark, `R` away), and the
+  // cycles from two before it, and 10 ms more, land on the next mark itself: the input comes back from 10 ms before
+  // the ratio is 1, so a crossfade over a shift's last 10 ms (a curve's ends where it reaches 0) meets the input itself.
+  // `x`: the place, `e` samples past its mark; `T`: the spacing the ratio asks for; the spacing to lay the next cycle at.
+  const steer = (x, e, P, R, T) => {
+    let h = fs / 1000, D = 0, a = ratio(x / fs)
+    for (let t = x; t < x + STEER * fs; t += h) {
+      let b = ratio((t + h) / fs)
+      if (a === 1 && b === 1) {
+        let land = t - x - 2 * T - fs / 100, w = e + D + P - R
+        if (land <= 0 && Math.abs(R - e - T) < T / 2) return R - e
+        return T * (1 - (w - P * Math.round(w / P)) / Math.max(land, P))
+      }
+      D += h * (1 - (a + b) / 2); a = b
+    }
+    return T
+  }
+
+  // a cycle around its mark, laid at its place, a raised-cosine lobe each side
+  function lay({ s, mk, lw }, rw) {
+    let i0 = Math.ceil(s - lw), i1 = Math.floor(s + rw)
+    if (Math.max(i0, 0) < emitted) late += emitted - Math.max(i0, 0)
+    growOut(i1 - obase + 2)
+    for (let i = Math.max(i0, emitted); i <= i1; i++) {
+      let u = i - s, w = u < 0 ? .5 + .5 * Math.cos(Math.PI * u / lw) : .5 + .5 * Math.cos(Math.PI * u / rw)
+      if (!(w > 0)) continue
+      let p = mk + u, oi = i - obase
+      for (let c = 0; c < nch; c++) out[c][oi] += w * at(c, p)
     }
   }
 
@@ -198,31 +266,36 @@ export function retuner(nch, o = {}) {
       if (!started) { s = marks[k].pos; started = true }
       // the mark nearest the place: the cycle laid there
       while (k + 1 < marks.length && Math.abs(marks[k + 1].pos - s) <= Math.abs(marks[k].pos - s)) { j++; k++ }
-      if (k + 1 >= marks.length) return
+      // the cycles stay an ONSET behind the marks, which a voiced run found late may still replace
+      if (k + 1 >= marks.length || marks[k + 1].pos > known() - back) return
       let mk = marks[k], nx = marks[k + 1], pv = k > 0 ? marks[k - 1] : null
       if (!mk.voiced) s = mk.pos
       // the next cycle a period of the source on, at the ratio half way to it: the period of the cycle the place is in
       // (before the mark, the one ending there), so a glide or a vibrato is followed cycle by cycle
       let R = nx.pos - mk.pos, L = pv ? mk.pos - pv.pos : R, P = s < mk.pos ? L : R, r = 1, T = R
-      if (mk.voiced) { r = ratio(s / fs); T = P / r; r = ratio((s + T / 2) / fs); T = P / r; r = ratio((s + T / 2) / fs); T = P / r }
-      // lobes of a source cycle each side. A lowered pitch lays the cycles further apart than they are long, and leaves
-      // the gap: lobes widened to the new spacing took in the cycles either side, and laid an octave down, two periods
-      // apart, gave the input's own period back (at 120 Hz, -12 and -9 semitones came out at 120 Hz)
-      let lw = L, rw = R
-      if (mk.pos + rw + ZC + 2 > n) return
-      let i0 = Math.ceil(s - lw), i1 = Math.floor(s + rw)
-      if (Math.max(i0, 0) < emitted) late += emitted - Math.max(i0, 0)
-      growOut(i1 - obase + 2)
-      for (let i = Math.max(i0, emitted); i <= i1; i++) {
-        let u = i - s, w = u < 0 ? .5 + .5 * Math.cos(Math.PI * u / lw) : .5 + .5 * Math.cos(Math.PI * u / rw)
-        if (!(w > 0)) continue
-        let p = mk.pos + u, oi = i - obase
-        for (let c = 0; c < nch; c++) out[c][oi] += w * at(c, p)
-        wsum[oi] += w
+      if (mk.voiced) {
+        r = ratio(s / fs); T = P / r; r = ratio((s + T / 2) / fs); T = P / r; r = ratio((s + T / 2) / fs)
+        // at a ratio of 1, a cycle off its mark by no more than the voice's own periods differ there (and half a sample)
+        // is laid on it: from there on, the input itself
+        if (r === 1 && Math.abs(s - mk.pos) <= Math.abs(L - R) + .5) s = mk.pos
+        P = s < mk.pos ? L : R
+        T = steer(s, s - mk.pos, P, R, P / r)
       }
+      if (mk.pos + R + ZC + 2 > n) return
+      // The cycle before is laid now its neighbour's place is known: each lobe reaches as far as the source's period
+      // that side and no further than the cycle laid next to it (Praat's PSOLA, Manipulation.cpp copyBell2), so two
+      // lobes meet across each gap and sum to one, and a cycle laid where it was gives the input back. Raised, the
+      // cycles lie closer than they are long: lobes of the source's period overlapped three at a time, and the sum,
+      // divided by its windows' to undo that, lost the level the closer cycles carry (against the voice made at the
+      // pitch, 1 to 5 dB from +5 semitones; on eight recordings at +5, 1.4 dB under Praat's). Lowered, the cycles lie
+      // further apart than they are long, and the gap stays: lobes widened to the new spacing took in the cycles either
+      // side, and laid an octave down, two periods apart, gave the input's own period back (at 120 Hz, -12 and -9
+      // semitones came out at 120 Hz)
+      if (pend) lay(pend, Math.min(pend.R, s - pend.s))
+      pend = { s, mk: mk.pos, lw: pend ? Math.min(L, s - pend.s) : L, R }
       // the next cycle a period on at the curve's ratio; back on the marks once the ratio is 1 and they are met, or the
       // voice stops (unvoiced marks are laid where they are)
-      s = !mk.voiced || (r === 1 && Math.abs(s - mk.pos) < 1e-6) ? nx.pos : s + T
+      s = !mk.voiced || (r === 1 && s === mk.pos) ? nx.pos : s + T
     }
   }
 
@@ -230,16 +303,12 @@ export function retuner(nch, o = {}) {
     let len = Math.max(0, upto - emitted), res = Array.from({ length: nch }, () => new Float32Array(len))
     if (!len) return res
     growOut(upto - obase + 1)
-    for (let i = 0; i < len; i++) {
-      let oi = emitted + i - obase, w = wsum[oi]
-      // the cycles' sum over their windows' where they overlap; a gap is not raised to full level, which would fill it
-      for (let c = 0; c < nch; c++) res[c][i] = w > 1 - 1e-9 ? out[c][oi] / w : out[c][oi]
-    }
+    for (let c = 0; c < nch; c++) res[c].set(out[c].subarray(emitted - obase, upto - obase))
     emitted = upto
     let drop = emitted - obase
-    if (drop > (wsum.length >> 1)) {
+    if (drop > (out[0].length >> 1)) {
       for (let c = 0; c < nch; c++) { out[c].copyWithin(0, drop); out[c].fill(0, out[c].length - drop) }
-      wsum.copyWithin(0, drop); wsum.fill(0, wsum.length - drop); obase += drop
+      obase += drop
     }
     // what nothing reads any more goes: input, track and marks well behind the next cycle
     let keep = Math.min(emitted, s) - 4 * Pmax - Wd * dec - 4 * hop

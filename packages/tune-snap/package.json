@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune-snap",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Pitch correction to a scale: each note's centre moved onto its note, its slow drift flattened, the voice's own cycles re-spaced along one pitch curve (Auto-Tune / Melodyne class)",
   "type": "module",
   "sideEffects": false,
@@ -22,7 +22,7 @@
   "dependencies": {
     "@audio/note": "^1.0.0",
     "@audio/pitch-pyin": "^2.0.0",
-    "@audio/tune-curve": "^0.2.0"
+    "@audio/tune-curve": "^0.3.0"
   },
   "keywords": [
     "audio",

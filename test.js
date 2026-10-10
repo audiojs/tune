@@ -179,6 +179,44 @@ test('tune-curve: a curve: the pitch follows it; a stream equals the batch howev
 	is(r.late, 0, 'no cycle reaches back past what was already out')
 })
 
+// Raised, the cycles lie closer than they are long: lobes of the source's period overlapped three at a time and the sum,
+// divided by its windows', lost 1 to 5 dB against the voice made at the pitch. Lobes no longer than the spacing (Praat's
+// PSOLA, Manipulation.cpp copyBell2) meet in pairs, summing to one, and each cycle keeps its level
+test('tune-curve: raised, a voice keeps its level (vs the voice made at that pitch)', () => {
+	let n = Math.round(1.2 * fs), a = Math.round(.4 * fs), b = Math.round(.9 * fs)
+	let rms = d => { let s = 0; for (let i = a; i < b; i++) s += d[i] ** 2; return Math.sqrt(s / (b - a)) }
+	for (let f0 of [100, 120, 160, 220]) for (let st of [1, 2.35, 5, 7, 12]) {
+		let db = 20 * Math.log10(rms(tuneCurve(voice(f0, n), { semitones: st, fs })) / rms(voice(f0 * 2 ** (st / 12), n)))
+		ok(Math.abs(db) < 2, `${f0} Hz +${st}: ${db.toFixed(2)} dB`)
+	}
+})
+
+// Re-spaced, the cycles run ∫(ratio − 1) ahead of the input, a part of a period: left there, what follows (the input
+// itself, a crossfade back into it) met them that far off, up to half a period, and the two cancelled. Over the 100 ms
+// before the ratio returns to 1 they drift back onto their marks, and after it the input comes back sample for sample
+test('tune-curve: where the ratio returns to 1, the input comes back, sample for sample', () => {
+	let n = Math.round(1.6 * fs), from = Math.round(.95 * fs), to = Math.round(1.5 * fs)
+	for (let [name, f0] of [['110 Hz', 110], ['230 Hz', 230], ['gliding', t => 130 * 2 ** (2 * Math.sin(2 * Math.PI * 1.5 * t) / 12)]]) for (let st of [.05, 2.35, 5, -3]) {
+		let x = voice(f0, n), y = tuneCurve(x, { semitones: { t: [.3, .4, .8, .9], v: [0, st, st, 0] }, fs }), d = 0
+		for (let i = from; i < to; i++) d = Math.max(d, Math.abs(y[i] - x[i]))
+		ok(d === 0, `${name}, ${st} semitones from 0.3 to 0.9 s: from 0.95 s off the input by ${d.toExponential(1)}`)
+	}
+})
+
+// YIN finds a voice once its frame is mostly voiced: a run's first 20 ms or so stayed at its pitch while the rest moved,
+// a scoop at every syllable. Its cycles are followed back from where it was found, while each matches the one after
+test('tune-curve: a voice shifts from its first cycles, not once YIN has found it', () => {
+	let on = Math.round(.3 * fs)
+	for (let f0 of [110, 140, 230]) {
+		let x = new Float32Array(fs), r = 7
+		x.set(voice(f0, fs - on), on)
+		for (let i = on - Math.round(.1 * fs); i < on; i++) { r = (r * 1664525 + 1013904223) >>> 0; x[i] = .01 * (r / 2 ** 32 - .5) }
+		let y = tuneCurve(x, { semitones: 3, fs }), f = yin(y.subarray(on + 64, on + 64 + 1024), { fs, minFreq: 60, maxFreq: 1000, threshold: .3 })?.freq
+		let c = f ? 1200 * Math.log2(f / f0) : NaN
+		ok(Math.abs(c - 300) < 15, `${f0} Hz after a breath, +3: ${c.toFixed(0)} cents over its first 23 ms`)
+	}
+})
+
 // Down to an octave and past it, every semitone lands: cycles laid further apart than they are long keep the gap
 // between them (widened to fill it, an octave down gave the input's own pitch back, 120 Hz at -12 and -9)
 test('tune-curve: lowered an octave or less, every semitone lands on its pitch', () => {
