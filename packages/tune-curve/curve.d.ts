@@ -19,7 +19,7 @@ export interface CurveOptions {
   maxFreq?: number
   /** the least ratio the curve takes, for the stream's latency (a lowered pitch lays its cycles wider), default 0.25 */
   rmin?: number
-  /** the voice's pitch to find its cycles on, instead of the retuner's own YIN: a curve (seconds → Hz, 0 where
+  /** the voice's pitch to find its cycles on, instead of the retuner's own pYIN: a curve (seconds → Hz, 0 where
    *  unvoiced; straight in log frequency between voiced points) or a function of seconds */
   f0?: ((t: number) => number) | Curve
 }

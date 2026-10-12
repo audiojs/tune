@@ -117,10 +117,10 @@ test('tune-midi — in-tune note untouched, guide required', () => {
 import tuneCurve, { retuner } from '@audio/tune-curve'
 
 // A voice: Rosenberg (1971) glottal pulses at f0 (Hz, or t => Hz), differentiated (lip radiation), through Klatt (1980)
-// resonators at Peterson & Barney's (1952) male /a/ formants, 730, 1090, 2440 Hz (and 3400): the same tract at any pitch,
-// so the voice made at the target pitch is what a retune that keeps formants should give
-function voice (f0, n, sr = fs) {
-	let rs = [[730, 90], [1090, 110], [2440, 170], [3400, 250]].map(([F, B]) => {
+// resonators at Peterson & Barney's (1952) male /a/ formants, 730, 1090, 2440 Hz (and 3400), or others [Hz, bandwidth]:
+// the same tract at any pitch, so the voice made at the target pitch is what a retune that keeps formants should give
+function voice (f0, n, sr = fs, formants = [[730, 90], [1090, 110], [2440, 170], [3400, 250]]) {
+	let rs = formants.map(([F, B]) => {
 		let C = -Math.exp(-2 * Math.PI * B / sr), Bc = 2 * Math.exp(-Math.PI * B / sr) * Math.cos(2 * Math.PI * F / sr), A = 1 - Bc - C, y1 = 0, y2 = 0
 		return x => { let y = A * x + Bc * y1 + C * y2; y2 = y1; y1 = y; return y }
 	})
@@ -257,4 +257,66 @@ test('tune-curve: cycles found on a pitch track given (f0)', () => {
 	let out = tuneCurve(d, { semitones: 3, fs, f0: t => 140 }), f = 140 * 2 ** (3 / 12)
 	let r = yin(out.subarray(fs >> 1, (fs >> 1) + 4096), { fs, minFreq: 60, maxFreq: 1000 }), c = 1200 * Math.log2(r.freq / f)
 	ok(Math.abs(c) < 2, `on the voice's pitch, +3: ${r.freq.toFixed(2)} Hz, ${c.toFixed(2)} cents`)
+})
+
+// A voice whose second harmonic rides its first formant (Peterson & Barney's /i/ at 135 Hz, /u/ at 150, /ʊ/ at 220: F1
+// of 270, 300 and 440 Hz) dips YIN's normalized difference under .35 at half its period in every frame. Cycles cut there
+// were a pulse and the ripple between pulses, and each one skipped or repeated put two pulses or two ripples side by
+// side: the voice's phase jumped (its periods, a period apart, .08 to .38 less alike than the input's). On pYIN's path
+// the cycles are whole, and every period of the output is as like the one before it as the input's is.
+const I = [[270, 60], [2290, 120], [3010, 170], [3700, 250]], U = [[300, 60], [870, 90], [2240, 170], [3400, 250]], UU = [[440, 70], [1020, 100], [2240, 170], [3400, 250]]
+const O = [[570, 80], [840, 100], [2410, 170], [3400, 250]]
+// how alike the period ending at t and the one starting there are (normalized correlation), at its best within 0.85
+// to 1.18 of a period of P samples
+const alike = (d, t, P) => {
+	let best = -1
+	for (let l = Math.floor(.85 * P); l <= Math.ceil(1.18 * P); l++) {
+		let xy = 0, xx = 0, yy = 0
+		for (let i = 0; i < l; i++) { let p = d[t - l + i], q = d[t + i]; xy += p * q; xx += p * p; yy += q * q }
+		best = Math.max(best, xy / Math.sqrt(xx * yy || 1))
+	}
+	return best
+}
+test('tune-curve: a voice whose second harmonic rides its first formant keeps its cycles whole', () => {
+	for (let [name, f0, F] of [['/i/', 135, I], ['/u/', 150, U], ['/ʊ/', 220, UU]]) for (let st of [-1, -3, 2]) {
+		let x = voice(f0, 2 * fs, fs, F), y = tuneCurve(x, { semitones: st, fs }), worst = Infinity
+		for (let t = 4096; t + 4096 < x.length; t += 110) worst = Math.min(worst, alike(y, t, fs / f0 / 2 ** (st / 12)) - alike(x, t, fs / f0))
+		ok(worst > -.02, `${name} at ${f0} Hz, ${st > 0 ? '+' : ''}${st}: its periods alike to ${worst.toFixed(3)} of the input's`)
+	}
+})
+
+// A voice that breaks and starts again: each new run of cycles is followed back from where pYIN found it, as far as its
+// own audio says, whatever the blocks the input came in. Bounded by how far the cycles had been laid instead, an /ɔ/ (F1
+// 570 Hz) with a resonance at its second harmonic, breaking every 250 ms, came out up to .44 of full scale apart, chunked
+// in odd blocks or in seconds.
+test('tune-curve: a voice that breaks and starts again retunes the same however it is chunked', () => {
+	let n = 3 * fs, x = voice(t => 120 * 2 ** (2 * Math.sin(2 * Math.PI * 1.1 * t) / 12), n, fs, [[240, 60], ...O]), r = 7
+	for (let i = 0; i < n; i++) if (i / fs % .25 > .22) { r = (r * 1664525 + 1013904223) >>> 0; x[i] = .3 * x[i] + .05 * (r / 2 ** 32 - .5) }
+	let whole = tuneCurve(x, { semitones: -2, fs })
+	for (let sizes of [[17, 1000, 4096, 333], [fs]]) {
+		let write = tuneCurve({ semitones: -2, fs }), y = new Float32Array(n), p = 0, k = 0
+		for (let i = 0; i < n;) { let m = sizes[k++ % sizes.length], o = write(x.subarray(i, i += m)); y.set(o, p); p += o.length }
+		let tail = write(); y.set(tail, p); p += tail.length
+		ok(p === n && y.every((v, i) => v === whole[i]), `in blocks of ${sizes.join(', ')} ≡ whole`)
+	}
+})
+
+// Where a vowel runs into a consonant, the last cycle, laid off its mark, gives way to the audio laid where it is, a
+// mark or more skipped between them: lobes of the source's spacing either side met across a dip, 5 to 13 of 24 edges
+// down more than 4 dB over 10 ms, to -9 dB, lowered 1 to 3 semitones at 110 Hz. Both lobes spanning the gap, a crossfade
+// from one to the other keeps the level across every edge.
+test('tune-curve: lowered, a vowel running into a consonant keeps its level across the edge', () => {
+	let lv = 0, x = [], edges = [], r = 7, rms = (d, a, n) => { let s = 0; for (let i = a; i < a + n; i++) s += d[i] ** 2; return Math.sqrt(s / n) }
+	lv = rms(voice(110, fs), fs >> 1, fs >> 2)
+	// 24 syllables: a vowel of 200 + 13k ms, so each ends at another part of a period, then 120 ms of noise at its level
+	for (let k = 0; k < 24; k++) {
+		x.push(...voice(110, Math.round((.2 + .013 * k) * fs))); edges.push(x.length)
+		for (let i = 0; i < .12 * fs; i++) { r = (r * 1664525 + 1013904223) >>> 0; x.push(1.7 * lv * (2 * (r / 2 ** 32) - 1)) }
+	}
+	x = Float32Array.from(x)
+	for (let st of [-1, -3]) {
+		let y = tuneCurve(x, { semitones: st, fs }), worst = 0
+		for (let e of edges) for (let a = e - 441; a < e + 441; a += 22) worst = Math.min(worst, 20 * Math.log10(rms(y, a, 441) / rms(x, a, 441)))
+		ok(worst > -6, `${st} semitones: 10 ms around each edge at least ${worst.toFixed(1)} dB of the input's level`)
+	}
 })

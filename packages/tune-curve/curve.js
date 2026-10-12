@@ -5,16 +5,17 @@
 // were. Unvoiced audio (consonants, breath, silence) passes as it is. Where the ratio returns to 1, the cycles have
 // drifted back onto their marks, and the input comes back as it was.
 //
-// The cycles are found as the audio streams: f0 by YIN (de Cheveigné & Kawahara, JASA 111, 2002) on the channels' mean
-// at about 11 kHz (samples averaged in fours), every 5 ms, a frame voiced where it and a neighbour pass: where YIN's
-// normalized difference dips under .35. YIN's own .15 holds a voice that does not glide within its 46 ms frame, and
-// running speech glides: of a lecture's voiced frames (pYIN's), 25 to 29% landed within 50 cents of a 4-semitone
-// shift up or down; at .35, 63 to 66%. The looser dip sometimes takes a harmonic's period for the voice's: a sung take
-// (audio-lena) went from 75% to 68%. Synthetic voices shift as before. Then a mark per cycle, the first at the loudest sample of a voiced run's first period and each next a period on, moved to where a
-// period of waveform matches the one before best (normalized correlation, refined between samples), as the prosody
-// editor's cycles.js steps them. A pitch track given as `f0` (a better tracker's, such as pYIN's Viterbi path) takes
-// the place of that YIN: the looser dip's harmonics then never set the cycles, which, a third or a quarter of a period
-// apart, re-spaced the waveform's ripples instead of its pulses.
+// The cycles are found as the audio streams: f0 by pYIN (Mauch & Dixon, ICASSP 2014) on the channels' mean, a frame
+// every 5.8 ms, the Viterbi path through its pitch HMM decided within LAG of the last frame read (@audio/pitch-pyin's
+// track with a fixed lag). YIN alone, voiced where its normalized difference dipped under .35 (at its own .15, 25 to 29%
+// of a lecture's voiced frames landed within 50 cents of a 4-semitone shift, running speech gliding within a frame; at
+// .35, 63 to 66%), took a strong second harmonic's period for the voice's: marks half a period apart, a pulse and the
+// ripple between pulses each cut as a cycle, so every cycle skipped or repeated swapped the two, the voice's phase
+// jumping there (a lecture lowered a semitone: 2.4 such seams a voiced second, now none; a sung take, 5 to 10 from -3 to
+// +2 semitones, now one, where a note ends). Then a mark per cycle, the first at the loudest sample of a voiced run's
+// first period and each next a period on, moved to where a period of waveform matches the one before best (normalized
+// correlation, refined between samples), as the prosody editor's cycles.js steps them. A pitch track given as `f0`
+// takes the place of pYIN's.
 // Against a synthetic voice re-synthesized at the target pitch (same Rosenberg pulse, same formants), the re-spaced
 // cycles kept its harmonics within 2.6 dB (median over ±12 semitones), a phase vocoder within 10.6 dB, its formants
 // moving with the pitch; on a sung recording they kept the long-term spectrum within 1.6 to 2.7 dB, the vocoder 7.5 to
@@ -26,7 +27,7 @@
 // ends). `f0`: the voice's pitch, a curve { t, v } (seconds → Hz, 0 where unvoiced) or a function of seconds, to find
 // the cycles on. Where the ratio is 1 and the cycles are laid where they were, the output is the input to float precision.
 
-import yin from '@audio/pitch-yin'
+import { track as pitchTrack } from '@audio/pitch-pyin'
 
 const isCurve = c => c != null && typeof c === 'object' && c.t?.length > 0 && c.v?.length === c.t.length
 
@@ -70,41 +71,51 @@ export function ratioOf(o) {
 // A Kaiser-windowed sinc (β 8, 8 zero crossings a side; Kaiser 1974) reads a cycle at a fractional place; whole places
 // read exactly, so cycles laid where they were give the input back.
 const ZC = 8, RES = 512
-// a frame is voiced where YIN's normalized difference dips under this (above)
-const VOICED = .35
+// pYIN's frames are decided within this long (s) of the last one read: within 0.1 s a lecture's frames took every
+// octave offline Viterbi did; within 0.14 s a tone held through period-doubling bursts (@audio/pitch-pyin's test)
+const LAG = .15
 // the cycles find their marks again over this long (s) before the ratio returns to 1: about the time a voice takes to
 // move its pitch a few semitones at its fastest (Xu & Sun, JASA 111, 2002, Table V: 89.6 ms and 8.7 more a semitone
 // rising, 100.4 and 5.8 falling)
 const STEER = .1
-// a voiced run is looked for this far (s) back from where YIN found it, whose frame is voiced only once mostly voiced
+// a voiced run is looked for this far (s) back from where pYIN found it, whose frame is voiced only once mostly voiced
 const ONSET = .04
 const I0 = x => { let s = 1, t = 1; for (let k = 1; k < 25; k++) { t *= (x / 2 / k) ** 2; s += t } return s }
 const KERNEL = Float64Array.from({ length: ZC * RES + 2 }, (_, i) => { let x = i / RES; return x >= ZC ? 0 : (x ? Math.sin(Math.PI * x) / (Math.PI * x) : 1) * I0(8 * Math.sqrt(1 - (x / ZC) ** 2)) / I0(8) })
 
 const ncc = (x, a, b, n) => { let xy = 0, xx = 0, yy = 0; for (let i = 0; i < n; i++) { let p = x[a + i], q = x[b + i]; xy += p * q; xx += p * p; yy += q * q } return xy / Math.sqrt(xx * yy || 1) }
 
-/** Samples the retuner runs behind its input, for voices down to minFreq and ratios down to rmin: half a YIN window
- *  and two frames ahead for the track, the ONSET a voiced run's start is looked for back by, a period and a half for
- *  the next mark, a cycle's window past its mark, and the widest lobe a cycle still to come reaches back by. */
+// pYIN's framing: a frame of the shortest power of 2 holding two periods of minFreq every `H`, read from a quarter frame
+// before its time, decided within `lag` frames
+const framing = (fs, minFreq) => {
+  let H = Math.round(fs * 256 / 44100)
+  return { H, N: 2 ** Math.ceil(Math.log2(2 * fs / minFreq)), lag: Math.max(1, Math.round(LAG * fs / H)) }
+}
+
+/** Samples the retuner runs behind its input, for voices down to minFreq and ratios down to rmin: the track's (a frame
+ *  read past its time, the frames its decision waits for, and one and a half more as frames round), the unvoiced grid,
+ *  the ONSET a voiced run is looked for back by and the period before it whose marks are final, then the cycles: the
+ *  next mark (1.3 periods on: marks follow the waveform up to .3 of a period off the one predicted), the place laid
+ *  next up to a period and a half off its mark, the spacing at the lowest ratio, and the widest lobe (1.3 periods). */
 export const latencyOf = ({ fs = 44100, sampleRate, minFreq = 60, rmin = .25 } = {}) => {
   fs = sampleRate || fs
-  let dec = Math.max(1, Math.floor(fs / 11025)), Wd = 2 ** Math.ceil(Math.log2(2 * fs / dec / minFreq)), hop = Math.max(dec, Math.round(.005 * fs / dec) * dec)
-  return Wd / 2 * dec + 2 * hop + Math.round(ONSET * fs) + Math.ceil(fs / minFreq * (3 + 1 / Math.min(1, rmin))) + 2 * ZC + 2
+  let { H, N, lag } = framing(fs, minFreq)
+  return 3 * N / 4 + Math.ceil((lag + 1.5) * H) + H + Math.round(ONSET * fs) + Math.ceil(fs / minFreq * (6 + 1 / Math.min(1, rmin))) + 2 * ZC + 2
 }
 
 /** The streaming retuner over `nch` channels: write(channels) → the timeline samples now final; end() → the rest. */
 export function retuner(nch, o = {}) {
   let fs = o.sampleRate || o.fs || 44100, ratio = ratioOf(o)
-  // the voice's pitch, Hz at seconds, when given: the cycles are found on it rather than on YIN's
+  // the voice's pitch, Hz at seconds, when given: the cycles are found on it rather than on pYIN's
   let given = typeof o.f0 === 'function' ? o.f0 : isCurve(o.f0) ? pitchAt(o.f0) : null
   let minFreq = o.minFreq || 60, maxFreq = o.maxFreq || 1000, Pmax = Math.ceil(fs / minFreq), Pmin = Math.max(2, Math.floor(fs / maxFreq))
-  let dec = Math.max(1, Math.floor(fs / 11025)), fsd = fs / dec, Wd = 2 ** Math.ceil(Math.log2(2 * fsd / minFreq))
-  let hop = Math.max(dec, Math.round(.005 * fs / dec) * dec), V = hop, latency = latencyOf({ fs, minFreq, rmin: o.rmin }), back = Math.round(ONSET * fs)
-  // the input, its channels' mean, and that mean averaged in fours, all from timeline sample `base`
-  let x = Array.from({ length: nch }, () => new Float32Array(1 << 15)), m = new Float32Array(1 << 15), d = new Float32Array((1 << 15) / dec + 2)
+  let { H, N, lag } = framing(fs, minFreq), V = H, latency = latencyOf({ fs, minFreq, rmin: o.rmin }), back = Math.round(ONSET * fs)
+  let pyin = given ? null : pitchTrack({ fs, minFreq, maxFreq, lag })
+  // the input and its channels' mean, from timeline sample `base`
+  let x = Array.from({ length: nch }, () => new Float32Array(1 << 15)), m = new Float32Array(1 << 15)
   let base = 0, n = 0
-  // f0 frames at k·hop from `tbase`: raw, and decided (a period in samples, 0 unvoiced) one frame later
-  let raw = [], track = [], tbase = 0
+  // the track: a period in samples (0 unvoiced) for each frame decided, frame k at k·H, from `tbase`
+  let track = [], tbase = 0
   // marks, from `mbase`; where the next is looked for; whether a voiced run is on
   let marks = [], mbase = 0, cursor = 0, run = false
   // the next cycle's place `s` and the mark `j` it is laid from; the cycle placed before it, laid once `s` is known;
@@ -117,7 +128,6 @@ export function retuner(nch, o = {}) {
     let len = Math.max(need, 2 * m.length), have = n - base
     x = x.map(a => { let b = new Float32Array(len); b.set(a.subarray(0, have)); return b })
     let mb = new Float32Array(len); mb.set(m.subarray(0, have)); m = mb
-    let db = new Float32Array(Math.ceil(len / dec) + 2); db.set(d.subarray(0, Math.ceil(have / dec))); d = db
   }
   const growOut = need => {
     if (need <= out[0].length) return
@@ -135,27 +145,14 @@ export function retuner(nch, o = {}) {
     }
     return acc / sum
   }
-  const known = () => (tbase + track.length) * hop - hop / 2   // the track decides voicing up to here
-  const period = p => { let k = Math.round(p / hop) - tbase; return k >= 0 && k < track.length ? track[k] : 0 }
+  const known = () => (tbase + track.length) * H - H / 2   // the track decides voicing up to here
+  const period = p => { let k = Math.round(p / H) - tbase; return k >= 0 && k < track.length ? track[k] : 0 }
 
-  function analyse() {
-    for (;;) {
-      let k = tbase + raw.length, c = k * hop
-      if (c + Wd / 2 * dec > n) return
-      let lo = c / dec - Wd / 2 - base / dec, f = 0
-      if (given) { let hz = +given(c / fs); if (hz >= minFreq && hz <= maxFreq) f = fs / hz }
-      else if (lo >= 0) {
-        let fr = d.subarray(lo, lo + Wd), e = 0
-        for (let i = 0; i < Wd; i++) e += fr[i] * fr[i]
-        if (e / Wd > 1e-7) { let r = yin(fr, { fs: fsd, minFreq, maxFreq: Math.min(maxFreq, fsd / 4), threshold: VOICED }); if (r) f = fs / r.freq }
-      }
-      raw.push(f)
-      // the frame before, decided: voiced where it and a neighbour are, its period the median of those voiced
-      let i = raw.length - 2
-      if (i < 0) continue
-      let a = i > 0 ? raw[i - 1] : 0, b = raw[i], cc = raw[i + 1], v = b && (a || cc) ? [a, b, cc].filter(Boolean).sort((p, q) => p - q) : []
-      track.push(v.length ? v[v.length >> 1] : 0)
-    }
+  // the frames decided by now: pYIN's, on the mean just read, or the track given, at the frames pYIN would have decided
+  const periodOf = hz => hz > 0 ? Math.min(Pmax, Math.max(Pmin, fs / hz)) : 0
+  function analyse(chunk) {
+    if (pyin) { for (let f of pyin(chunk).f0) track.push(periodOf(f)); return }
+    for (let k = tbase + track.length; (k + lag) * H + 3 * N / 4 <= n; k++) { let hz = +given(k * H / fs); track.push(hz >= minFreq && hz <= maxFreq ? fs / hz : 0) }
   }
 
   // where a period of the waveform (2h long) best matches the one around b0, from lo to hi: its lag from b0, refined
@@ -169,12 +166,14 @@ export function retuner(nch, o = {}) {
   }
 
   function place() {
+    // the stream's first sample is a mark, laid where it is: nothing before it to re-space
+    if (!marks.length) { marks.push({ pos: 0, voiced: false }); cursor = 1 }
     for (;;) {
       let edge = known()
       if (cursor >= edge) return
       let P = period(cursor), prev = marks[marks.length - 1]
       if (!P) {
-        // unvoiced: a mark on the 5 ms grid; cycles laid where they are
+        // unvoiced: a mark on the frames' grid; cycles laid where they are
         let pos = Math.max(Math.ceil(cursor / V) * V, prev ? Math.floor(prev.pos) + 1 : 0)
         if (pos >= edge) return
         if (period(pos)) { cursor = pos; continue }
@@ -189,20 +188,24 @@ export function retuner(nch, o = {}) {
         pos = a
         for (let i = a, bv = -1; i < b; i++) { let v = Math.abs(m[i - base]); if (v > bv) { bv = v; pos = i } }
         // and goes back a cycle at a time while each matches the one after as a cycle past a voiced interval's edge must
-        // in Praat's (correlation over .7, Pitch_to_PointProcess.cpp), over the marks the cycles have not reached: YIN
-        // finds a voice once its frame is mostly voiced, and a run's first 20 ms or so stayed at its pitch while the rest
-        // moved (on eight recordings, 6.5% of the frames Praat finds voiced; now 0.9%)
-        let used = j - mbase + 1, free = used < marks.length ? marks[used].pos + 1 : 0, add = []
+        // in Praat's (correlation over .7, Pitch_to_PointProcess.cpp): pYIN finds a voice once its frame is mostly voiced,
+        // and a run's first 20 ms or so stayed at its pitch while the rest moved (on eight recordings, 6.5% of the frames
+        // Praat finds voiced; now 0.9%). It goes back no further than the ONSET, nor within half a period of a voiced
+        // mark, so it replaces unvoiced marks only, and how far it goes is the audio's alone: bounded by the marks the
+        // cycles had reached instead, it went further when the input came in larger blocks, and a lecture retuned in
+        // blocks of 1024 and of 8192 samples differed by up to .25 of full scale, a sung take by .76.
+        let stop = pos - back, add = []
+        for (let i = marks.length - 1; i >= 0 && marks[i].pos >= stop - P; i--) if (marks[i].voiced) { stop = Math.max(stop, marks[i].pos + P / 2); break }
         for (let q = pos; ;) {
           let next = q - P, h = Math.round(P / 2), lo = Math.round(next - .3 * P), hi = Math.round(next + .3 * P)
-          if (lo - h < base || lo < free) break
+          if (lo <= stop || lo - h < 0) break
           let [lag, score] = match(Math.round(q), lo, hi, h)
           if (score <= .7) break
           add.unshift(q += lag)
         }
         if (add.length) {
-          let i = Math.max(used + 1, 0)
-          while (i < marks.length && marks[i].pos < add[0] - P / 2) i++
+          let i = marks.length
+          while (i > 0 && marks[i - 1].pos >= add[0] - P / 2) i--
           marks.splice(i)
           for (let q of add) marks.push({ pos: q, voiced: true })
         }
@@ -261,24 +264,27 @@ export function retuner(nch, o = {}) {
 
   function synth() {
     for (;;) {
-      let k = j - mbase
-      if (k + 1 >= marks.length) return
+      // the cycles keep to marks no voiced run found later replaces: a run starts at the cursor or after it and replaces
+      // marks from half a period before the ONSET back from there, so those a period before that are final
+      let k = j - mbase, final = cursor - back - Pmax
+      if (k + 1 >= marks.length || marks[k + 1].pos >= final) return
       if (!started) { s = marks[k].pos; started = true }
       // the mark nearest the place: the cycle laid there
-      while (k + 1 < marks.length && Math.abs(marks[k + 1].pos - s) <= Math.abs(marks[k].pos - s)) { j++; k++ }
-      // the cycles stay an ONSET behind the marks, which a voiced run found late may still replace
-      if (k + 1 >= marks.length || marks[k + 1].pos > known() - back) return
+      while (k + 1 < marks.length && marks[k + 1].pos < final && Math.abs(marks[k + 1].pos - s) <= Math.abs(marks[k].pos - s)) { j++; k++ }
+      if (k + 1 >= marks.length || marks[k + 1].pos >= final) return
       let mk = marks[k], nx = marks[k + 1], pv = k > 0 ? marks[k - 1] : null
       if (!mk.voiced) s = mk.pos
       // the next cycle a period of the source on, at the ratio half way to it: the period of the cycle the place is in
-      // (before the mark, the one ending there), so a glide or a vibrato is followed cycle by cycle
-      let R = nx.pos - mk.pos, L = pv ? mk.pos - pv.pos : R, P = s < mk.pos ? L : R, r = 1, T = R
+      // (before the mark, the one ending there), so a glide or a vibrato is followed cycle by cycle; at a run's edge, the
+      // voiced cycle's beside it, not the way to an unvoiced mark
+      let R = nx.pos - mk.pos, L = pv ? mk.pos - pv.pos : R, r = 1, T = R
+      let own = () => s < mk.pos ? (pv?.voiced || !nx.voiced ? L : R) : (nx.voiced || !pv?.voiced ? R : L), P = own()
       if (mk.voiced) {
         r = ratio(s / fs); T = P / r; r = ratio((s + T / 2) / fs); T = P / r; r = ratio((s + T / 2) / fs)
         // at a ratio of 1, a cycle off its mark by no more than the voice's own periods differ there (and half a sample)
         // is laid on it: from there on, the input itself
         if (r === 1 && Math.abs(s - mk.pos) <= Math.abs(L - R) + .5) s = mk.pos
-        P = s < mk.pos ? L : R
+        P = own()
         T = steer(s, s - mk.pos, P, R, P / r)
       }
       if (mk.pos + R + ZC + 2 > n) return
@@ -290,9 +296,14 @@ export function retuner(nch, o = {}) {
       // pitch, 1 to 5 dB from +5 semitones; on eight recordings at +5, 1.4 dB under Praat's). Lowered, the cycles lie
       // further apart than they are long, and the gap stays: lobes widened to the new spacing took in the cycles either
       // side, and laid an octave down, two periods apart, gave the input's own period back (at 120 Hz, -12 and -9
-      // semitones came out at 120 Hz)
-      if (pend) lay(pend, Math.min(pend.R, s - pend.s))
-      pend = { s, mk: mk.pos, lw: pend ? Math.min(L, s - pend.s) : L, R }
+      // semitones came out at 120 Hz). Where a run meets unvoiced audio the two are no neighbours in the source: the last
+      // cycle, laid off its mark, gives way to the audio laid where it is, a mark or more skipped between them, and lobes
+      // of the source's spacing either side met across a dip (24 vowels into a consonant, lowered 1 to 3 semitones at
+      // 110 Hz: 5 to 13 of the edges down more than 4 dB over 10 ms, to -9 dB). There both lobes span the gap: a
+      // crossfade from one to the other.
+      let gap = pend ? s - pend.s : 0, whole = pend && !(pend.v && mk.voiced)
+      if (pend) lay(pend, whole ? gap : Math.min(pend.R, gap))
+      pend = { s, mk: mk.pos, v: mk.voiced, lw: !pend ? L : whole ? gap : Math.min(L, gap), R }
       // the next cycle a period on at the curve's ratio; back on the marks once the ratio is 1 and they are met, or the
       // voice stops (unvoiced marks are laid where they are)
       s = !mk.voiced || (r === 1 && s === mk.pos) ? nx.pos : s + T
@@ -311,16 +322,16 @@ export function retuner(nch, o = {}) {
       obase += drop
     }
     // what nothing reads any more goes: input, track and marks well behind the next cycle
-    let keep = Math.min(emitted, s) - 4 * Pmax - Wd * dec - 4 * hop
+    let keep = Math.min(emitted, s) - 4 * Pmax - N
     let gone = 0
     while (gone + 2 < j - mbase && marks[gone + 1].pos < keep) gone++
     if (gone) { marks.splice(0, gone); mbase += gone }
-    let frames = Math.floor(keep / hop) - tbase - 2
-    if (frames > 64 && frames < track.length) { track.splice(0, frames); raw.splice(0, frames); tbase += frames }
-    let cut = Math.floor(Math.max(0, keep - base) / dec) * dec
+    let frames = Math.floor(keep / H) - tbase - 2
+    if (frames > 64 && frames < track.length) { track.splice(0, frames); tbase += frames }
+    let cut = Math.floor(Math.max(0, keep - base))
     if (cut > (m.length >> 1)) {
       for (let c = 0; c < nch; c++) x[c].copyWithin(0, cut, n - base)
-      m.copyWithin(0, cut, n - base); d.copyWithin(0, cut / dec, Math.ceil((n - base) / dec) + 1); base += cut
+      m.copyWithin(0, cut, n - base); base += cut
     }
     return res
   }
@@ -330,10 +341,8 @@ export function retuner(nch, o = {}) {
     grow(have + len + 1)
     for (let c = 0; c < nch; c++) x[c].set(chunk[c], have)
     for (let i = 0; i < len; i++) { let v = 0; for (let c = 0; c < nch; c++) v += chunk[c][i]; m[have + i] = v / nch }
-    let d0 = Math.floor(have / dec), d1 = Math.floor((have + len) / dec)
-    for (let k = d0; k < d1; k++) { let v = 0; for (let i = 0; i < dec; i++) v += m[k * dec + i]; d[k] = v / dec }
     n += len
-    analyse(); place(); synth()
+    analyse(m.subarray(have, have + len)); place(); synth()
   }
   let end = Infinity
   return {
@@ -341,7 +350,7 @@ export function retuner(nch, o = {}) {
     get late() { return late },
     write(chunk) { feed(chunk); return emit(Math.min(end, Math.max(emitted, n - latency))) },
     // silence past the end lets the last frames, marks and cycles complete
-    end() { end = n; feed(Array.from({ length: nch }, () => new Float32Array(latency + Wd * dec))); return emit(end) }
+    end() { end = n; feed(Array.from({ length: nch }, () => new Float32Array(latency + N))); return emit(end) }
   }
 }
 
