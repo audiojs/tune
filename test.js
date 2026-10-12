@@ -320,3 +320,14 @@ test('tune-curve: lowered, a vowel running into a consonant keeps its level acro
 		ok(worst > -6, `${st} semitones: 10 ms around each edge at least ${worst.toFixed(1)} dB of the input's level`)
 	}
 })
+
+// The shortest streams: none, one sample, less than a pitch frame (2048); each keeps its length, finite, the input itself
+// at 0 semitones, and a stream split just before its last sample gives the batch's samples
+test('tune-curve: the shortest inputs keep their length, and a stream split at the last sample equals the batch', () => {
+	let d = voice(130, fs)
+	for (let n of [0, 1, 100, 2047, 20000]) for (let st of [0, -3]) {
+		let x = d.slice(0, n), y = tuneCurve(x, { semitones: st, fs }), write = tuneCurve({ semitones: st, fs })
+		let s = [...write(x.subarray(0, Math.max(0, n - 1))), ...write(x.subarray(Math.max(0, n - 1))), ...write()]
+		ok(y.length === n && y.every(Number.isFinite) && (st || y.every((v, i) => v === x[i])) && s.length === n && s.every((v, i) => v === y[i]), `${n} samples, ${st} semitones`)
+	}
+})
