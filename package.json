@@ -1,6 +1,6 @@
 {
   "name": "@audio/tune",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "type": "module",
   "sideEffects": false,
   "description": "Pitch correction: umbrella for @audio/tune-* atoms (scale snap, MIDI-target, drawn curve)",
@@ -24,23 +24,22 @@
       "types": "./index.d.ts",
       "default": "./index.js"
     },
-    "./package.json": "./package.json",
-    "./*": {
-      "types": "./members/*.d.ts",
-      "default": "./members/*.js"
-    }
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "*.d.ts",
-    "members/"
+    "audio.js"
   ],
   "scripts": {
     "test": "node test.js",
     "test:all": "npm test --workspaces --if-present && npm test",
     "publish:all": "node ../compile/tools/tested.js && npm publish --workspaces && npm publish",
-    "members": "node scripts/members.js",
-    "prepublishOnly": "node ../compile/tools/tested.js && node scripts/members.js --check"
+    "prepublishOnly": "node ../compile/tools/tested.js"
   },
   "dependencies": {
     "@audio/tune-snap": "^2.0.2",
