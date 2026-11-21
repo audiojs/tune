@@ -7,8 +7,10 @@
 
 import snap from './snap.js'
 
+// @audio/note's SCALES by name, which snap.js snaps by: every one of them, a new one added at the end (a host may hold an
+// enum by its place). The family's test.js holds this list to the package's
 const SCALES = ['chromatic', 'major', 'minor', 'harmonic-minor', 'melodic-minor',
-	'pentatonic-major', 'pentatonic-minor', 'blues', 'dorian', 'mixolydian', 'whole']
+	'pentatonic-major', 'pentatonic-minor', 'blues', 'dorian', 'mixolydian', 'whole', 'phrygian', 'lydian', 'locrian']
 
 export const tune = (ctx) => {
 	return (inputs, outputs, params) => {

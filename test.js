@@ -345,3 +345,15 @@ test('audio.js lists every member that has a manifest', async () => {
 	for (const m of members) for (const [k, v] of Object.entries(await import(`${m}/audio`))) if (k !== 'default' && family[k] !== v) missing.push(`${m}: ${k}`)
 	is(missing, [], 'every name a member\'s manifest exports, the same binding')
 })
+
+// tune-snap's manifest takes every scale snap.js snaps by: @audio/note's SCALES (1.1.0 added phrygian, lydian and
+// locrian, which the manifest's list refused while snap() took them), and no other
+test('tune-snap: the manifest\'s scales are @audio/note\'s, each one snapped by', async () => {
+	const { SCALES } = await import('@audio/note'), { tune } = await import('@audio/tune-snap/audio')
+	is([...tune.params.scale.values].sort(), Object.keys(SCALES).sort(), 'the same names')
+	let d = sine(452, fs)   // between A4 and A#4
+	for (let scale of ['phrygian', 'lydian', 'locrian']) {
+		let out = snap(d, { fs, scale, root: 9 }), f = measure(out, fs / 2)
+		ok(SCALES[scale].some(s => Math.abs(1200 * Math.log2(f / (440 * 2 ** (s / 12)))) < 10), `${scale} on A: 452 Hz comes out on a degree (${f.toFixed(1)} Hz)`)
+	}
+})

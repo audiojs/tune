@@ -23,7 +23,7 @@ Nothing is cut out, shifted apart and crossfaded back over the dry voice, so no 
 | `options` | default | |
 |---|---|---|
 | `fs` | `44100` | Hz (`sampleRate` is read too) |
-| `scale` | `'chromatic'` | `'major'`, `'minor'`, `'harmonic-minor'`, `'melodic-minor'`, `'pentatonic-major'`, `'pentatonic-minor'`, `'blues'`, `'dorian'`, `'mixolydian'`, `'whole'`, or the degrees as semitones above the root |
+| `scale` | `'chromatic'` | `'major'`, `'minor'`, `'harmonic-minor'`, `'melodic-minor'`, `'pentatonic-major'`, `'pentatonic-minor'`, `'blues'`, `'dorian'`, `'mixolydian'`, `'whole'`, `'phrygian'`, `'lydian'`, `'locrian'`, or the degrees as semitones above the root |
 | `root` | `0` | the scale's root, semitones above C (2 is D, 9 is A) |
 | `a4` | `440` | Hz, the tuning of A4 |
 | `strength` | `1` | how much of the correction is applied: 1 all, .5 half way, 0 none |

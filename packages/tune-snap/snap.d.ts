@@ -5,7 +5,7 @@ export interface SnapOptions {
   fs?: number
   sampleRate?: number
   /** the notes a voice may land on, default 'chromatic'; or the scale's degrees, semitones above the root */
-  scale?: 'chromatic' | 'major' | 'minor' | 'harmonic-minor' | 'melodic-minor' | 'pentatonic-major' | 'pentatonic-minor' | 'blues' | 'dorian' | 'mixolydian' | 'whole' | number[]
+  scale?: 'chromatic' | 'major' | 'minor' | 'harmonic-minor' | 'melodic-minor' | 'pentatonic-major' | 'pentatonic-minor' | 'blues' | 'dorian' | 'mixolydian' | 'whole' | 'phrygian' | 'lydian' | 'locrian' | number[]
   /** 0-11, the scale's root, semitones above C, default 0 */
   root?: number
   /** Hz, the tuning of A4, default 440 */

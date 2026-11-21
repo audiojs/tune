@@ -11,7 +11,7 @@ type Process = (inputs: Float32Array[][], outputs: Float32Array[][], params: Liv
 /** Chainable-host options for 'tune' */
 export interface TuneOptions {
   /** default "chromatic" */
-  "scale"?: "chromatic" | "major" | "minor" | "harmonic-minor" | "melodic-minor" | "pentatonic-major" | "pentatonic-minor" | "blues" | "dorian" | "mixolydian" | "whole"
+  "scale"?: "chromatic" | "major" | "minor" | "harmonic-minor" | "melodic-minor" | "pentatonic-major" | "pentatonic-minor" | "blues" | "dorian" | "mixolydian" | "whole" | "phrygian" | "lydian" | "locrian"
   /** 0..11 (default 0) */
   "root"?: Auto
   /** 415..466 Hz (default 440) */
@@ -33,7 +33,7 @@ export declare const tune: {
   tail: 0
   params: {
     /** default "chromatic" */
-    "scale": { type: "enum", values: ["chromatic","major","minor","harmonic-minor","melodic-minor","pentatonic-major","pentatonic-minor","blues","dorian","mixolydian","whole"], default: "chromatic" }
+    "scale": { type: "enum", values: ["chromatic","major","minor","harmonic-minor","melodic-minor","pentatonic-major","pentatonic-minor","blues","dorian","mixolydian","whole","phrygian","lydian","locrian"], default: "chromatic" }
     /** 0..11 (default 0) */
     "root": { type: "number", default: 0 }
     /** 415..466 Hz (default 440) */
