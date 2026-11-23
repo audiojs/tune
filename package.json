@@ -42,7 +42,7 @@
     "prepublishOnly": "node ../compile/tools/tested.js"
   },
   "dependencies": {
-    "@audio/tune-snap": "^2.0.2",
+    "@audio/tune-snap": "^2.0.4",
     "@audio/tune-midi": "^1.0.2",
     "@audio/tune-curve": "^0.4.0"
   },
